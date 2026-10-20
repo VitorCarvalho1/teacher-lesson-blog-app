@@ -1,98 +1,283 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import AppLayout from '@/components/layout/AppLayout';
+import Icon, { IconName } from '@/components/ui/Icon';
+import Button from '@/components/ui/Button';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
+import { useTheme } from '@/context/ThemeContext';
+import { getFirstName } from '@/utils/user-display';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+type Shortcut = {
+  to: string;
+  label: string;
+  description: string;
+  icon: IconName;
+};
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+const SHORTCUTS: Shortcut[] = [
+  {
+    to: '/posts',
+    label: 'Postagens',
+    description: 'Aulas publicadas pela comunidade',
+    icon: 'posts',
+  },
+  {
+    to: '/posts/new',
+    label: 'Nova aula',
+    description: 'Publicar uma nova lição',
+    icon: 'write',
+  },
+  {
+    to: '/users',
+    label: 'Comunidade',
+    description: 'Docentes e estudantes cadastrados',
+    icon: 'users',
+  },
+  {
+    to: '/users/new',
+    label: 'Nova pessoa',
+    description: 'Cadastrar docente ou estudante',
+    icon: 'plus',
+  },
+];
+
+export default function HomePage() {
+  const router = useRouter();
+  const { user, isAdmin, switchRole } = useAuth();
+  const { posts, users } = useData();
+  const { colors, radius, spacing } = useTheme();
+
+  const firstName = getFirstName(user);
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+    <AppLayout title="Início">
+      <View style={styles.container}>
+        <Text style={[styles.kicker, { color: colors.accent }]}>
+          Painel do administrador
+        </Text>
+        <Text style={[styles.title, { color: colors.text }]}>
+          Olá, {firstName}
+        </Text>
+        <Text style={[styles.intro, { color: colors.textMuted }]}>
+          Você entrou como{' '}
+          <Text style={{ fontWeight: '700', color: colors.text }}>
+            {user?.email}
+          </Text>
+          . Daqui você publica aulas e acompanha a comunidade do portal.
+        </Text>
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+        {!isAdmin ? (
+          <View
+            style={[
+              styles.noticeCard,
+              {
+                backgroundColor: colors.primarySoft,
+                borderColor: colors.primary,
+                borderRadius: radius.md,
+              },
+            ]}
+          >
+            <Text style={[styles.noticeText, { color: colors.primary }]}>
+              Você está visualizando como Membro.
+            </Text>
+            <Button
+              variant="primary"
+              onPress={switchRole}
+              style={{ marginTop: 8 }}
+            >
+              Alternar para Administrador
+            </Button>
+          </View>
+        ) : null}
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+        {/* Stats summary banner */}
+        <View style={styles.statsRow}>
+          <View
+            style={[
+              styles.statBox,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: radius.md,
+              },
+            ]}
+          >
+            <Text style={[styles.statValue, { color: colors.primary }]}>
+              {posts.length}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+              Aulas publicadas
+            </Text>
+          </View>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+          <View
+            style={[
+              styles.statBox,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                borderRadius: radius.md,
+              },
+            ]}
+          >
+            <Text style={[styles.statValue, { color: colors.accent }]}>
+              {users.length}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+              Membros cadastrados
+            </Text>
+          </View>
+        </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <Text
+          style={[
+            styles.sectionHeading,
+            { color: colors.text, marginTop: spacing.lg },
+          ]}
+        >
+          Ações rápidas
+        </Text>
+
+        <View style={styles.cardsGrid}>
+          {SHORTCUTS.map((shortcut) => (
+            <TouchableOpacity
+              key={shortcut.to}
+              activeOpacity={0.75}
+              onPress={() => router.push(shortcut.to as any)}
+              style={[
+                styles.shortcutCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderRadius: radius.md,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.iconWrap,
+                  { backgroundColor: colors.primarySoft },
+                ]}
+              >
+                <Icon name={shortcut.icon} size={20} color={colors.primary} />
+              </View>
+              <View style={styles.shortcutCopy}>
+                <Text
+                  style={[styles.shortcutLabel, { color: colors.text }]}
+                >
+                  {shortcut.label}
+                </Text>
+                <Text
+                  style={[styles.shortcutDesc, { color: colors.textMuted }]}
+                >
+                  {shortcut.description}
+                </Text>
+              </View>
+              <Icon
+                name="chevronRight"
+                size={16}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </AppLayout>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    paddingVertical: 8,
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+  kicker: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 6,
   },
   title: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    marginBottom: 8,
+  },
+  intro: {
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  noticeCard: {
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+  },
+  noticeText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  statBox: {
+    flex: 1,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  statLabel: {
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '500',
     textAlign: 'center',
   },
-  code: {
-    textTransform: 'uppercase',
+  sectionHeading: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  cardsGrid: {
+    gap: 12,
+  },
+  shortcutCard: {
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  iconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shortcutCopy: {
+    flex: 1,
+  },
+  shortcutLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  shortcutDesc: {
+    fontSize: 12,
+    lineHeight: 16,
   },
 });
