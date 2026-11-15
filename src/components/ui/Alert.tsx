@@ -1,14 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
 import { useTheme } from '@/context/ThemeContext';
 import Icon from '@/components/ui/Icon';
 
 type AlertProps = {
   children: React.ReactNode;
   variant?: 'error' | 'success' | 'info';
+  style?: StyleProp<ViewStyle>;
 };
 
-export default function Alert({ children, variant = 'info' }: AlertProps) {
+export default function Alert({ children, variant = 'info', style }: AlertProps) {
   const { colors, radius, spacing } = useTheme();
 
   const getTheme = () => {
@@ -51,6 +52,7 @@ export default function Alert({ children, variant = 'info' }: AlertProps) {
           padding: spacing.md,
           marginBottom: spacing.base,
         },
+        style,
       ]}
     >
       <Icon name={theme.icon} size={18} color={theme.text} />

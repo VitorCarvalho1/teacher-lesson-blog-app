@@ -1,27 +1,38 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Comment } from '@/types/comment';
-import { User } from '@/types/auth';
+import { deleteComment, updateComment } from '@/api/comments.api';
 import Avatar from '@/components/ui/Avatar';
 import TextArea from '@/components/ui/TextArea';
 import Button from '@/components/ui/Button';
+import Alert from '@/components/ui/Alert';
+import { useTheme } from '@/context/ThemeContext';
+import { User } from '@/types/auth';
+import { Comment } from '@/types/comment';
+import { toCommentErrorMessage } from '@/utils/comment-errors';
 import { formatDateTime } from '@/utils/format';
 import { getRoleLabel } from '@/utils/user-display';
-import { validateCommentContent, COMMENT_CONTENT_MAX } from '@/utils/validation';
-import { useTheme } from '@/context/ThemeContext';
+import {
+  COMMENT_CONTENT_MAX,
+  COMMENT_CONTENT_MIN,
+  validateCommentContent,
+} from '@/utils/validation';
 
 type CommentItemProps = {
   comment: Comment;
   currentUser: User | null;
-  onUpdate: (id: number, content: string) => Promise<void>;
-  onDelete: (id: number) => Promise<void>;
+  onChanged: () => void;
 };
+
+function wasEdited(comment: Comment): boolean {
+  const created = new Date(comment.created_at).getTime();
+  const updated = new Date(comment.updated_at).getTime();
+  return Number.isFinite(created) && Number.isFinite(updated) && updated - created > 2000;
+}
 
 export default function CommentItem({
   comment,
   currentUser,
-  onUpdate,
-  onDelete,
+  onChanged,
 }: CommentItemProps) {
   const { colors, radius, spacing } = useTheme();
 
@@ -34,6 +45,8 @@ export default function CommentItem({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.content);
   const [error, setError] = useState<string | undefined>();
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -41,14 +54,20 @@ export default function CommentItem({
   const handleSave = async () => {
     const nextError = validateCommentContent(draft);
     setError(nextError);
+    setApiError(null);
+    setSuccessMsg(null);
     if (nextError) {
       return;
     }
 
     setIsSaving(true);
     try {
-      await onUpdate(comment.id, draft.trim());
+      await updateComment(comment.post_id, comment.id, { content: draft.trim() });
       setEditing(false);
+      setSuccessMsg('Comentário atualizado.');
+      onChanged();
+    } catch (caught) {
+      setApiError(toCommentErrorMessage(caught));
     } finally {
       setIsSaving(false);
     }
@@ -56,11 +75,16 @@ export default function CommentItem({
 
   const handleDelete = async () => {
     setIsDeleting(true);
+    setApiError(null);
+    setSuccessMsg(null);
     try {
-      await onDelete(comment.id);
+      await deleteComment(comment.post_id, comment.id);
+      onChanged();
+    } catch (caught) {
+      setApiError(toCommentErrorMessage(caught));
+      setConfirmingDelete(false);
     } finally {
       setIsDeleting(false);
-      setConfirmingDelete(false);
     }
   };
 
@@ -103,6 +127,11 @@ export default function CommentItem({
                 {getRoleLabel(authorRole)}
               </Text>
             </View>
+            {wasEdited(comment) ? (
+              <Text style={[styles.editedText, { color: colors.textMuted }]}>
+                editado
+              </Text>
+            ) : null}
           </View>
           {postedAt ? (
             <Text style={[styles.time, { color: colors.textMuted }]}>
@@ -111,6 +140,18 @@ export default function CommentItem({
           ) : null}
         </View>
       </View>
+
+      {apiError ? (
+        <Alert variant="error" style={{ marginVertical: 6 }}>
+          {apiError}
+        </Alert>
+      ) : null}
+
+      {successMsg ? (
+        <Alert variant="success" style={{ marginVertical: 6 }}>
+          {successMsg}
+        </Alert>
+      ) : null}
 
       {editing ? (
         <View style={styles.editWrap}>
@@ -121,6 +162,7 @@ export default function CommentItem({
               setDraft(val);
               setError(undefined);
             }}
+            hint={`${draft.trim().length}/${COMMENT_CONTENT_MAX} · mínimo ${COMMENT_CONTENT_MIN} caracteres`}
             maxLength={COMMENT_CONTENT_MAX}
             rows={3}
             error={error}
@@ -140,6 +182,7 @@ export default function CommentItem({
                 setEditing(false);
                 setDraft(comment.content);
                 setError(undefined);
+                setApiError(null);
               }}
               style={styles.cancelBtn}
             >
@@ -162,6 +205,7 @@ export default function CommentItem({
               onPress={() => {
                 setEditing(true);
                 setConfirmingDelete(false);
+                setApiError(null);
               }}
               style={styles.actionBtn}
             >
@@ -176,14 +220,15 @@ export default function CommentItem({
               <View style={styles.confirmRow}>
                 <Button
                   variant="danger"
+                  size="sm"
                   loading={isDeleting}
                   onPress={handleDelete}
-                  style={{ height: 32 }}
                 >
-                  Sim, remover
+                  {isDeleting ? 'Removendo…' : 'Sim, remover'}
                 </Button>
                 <TouchableOpacity
                   onPress={() => setConfirmingDelete(false)}
+                  disabled={isDeleting}
                   style={styles.cancelBtn}
                 >
                   <Text style={[styles.cancelText, { color: colors.textMuted }]}>
@@ -225,6 +270,7 @@ const styles = StyleSheet.create({
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
   },
   authorName: {
@@ -241,6 +287,10 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  editedText: {
+    fontSize: 11,
+    fontStyle: 'italic',
   },
   time: {
     fontSize: 11,

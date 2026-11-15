@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { updateMe } from '@/api/users.api';
 import Modal from '@/components/ui/Modal';
 import PasswordField from '@/components/ui/PasswordField';
 import Button from '@/components/ui/Button';
 import Alert from '@/components/ui/Alert';
+import { toUserErrorMessage } from '@/utils/user-errors';
 import {
   MIN_PASSWORD_LENGTH,
   validateCurrentPassword,
@@ -28,16 +30,18 @@ export default function PasswordChangeModal({
     password?: string;
     confirmPassword?: string;
   }>({});
+  const [apiError, setApiError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const errs = {
       currentPassword: validateCurrentPassword(currentPassword),
       password: validatePassword(password),
       confirmPassword: validatePasswordConfirm(password, confirmPassword),
     };
     setErrors(errs);
+    setApiError(null);
     setSuccess(false);
 
     if (errs.currentPassword || errs.password || errs.confirmPassword) {
@@ -45,13 +49,30 @@ export default function PasswordChangeModal({
     }
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await updateMe({
+        password,
+        currentPassword,
+      });
       setSuccess(true);
       setCurrentPassword('');
       setPassword('');
       setConfirmPassword('');
-    }, 600);
+    } catch (error) {
+      setApiError(toUserErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClose = () => {
+    setCurrentPassword('');
+    setPassword('');
+    setConfirmPassword('');
+    setErrors({});
+    setApiError(null);
+    setSuccess(false);
+    onClose();
   };
 
   return (
@@ -59,12 +80,13 @@ export default function PasswordChangeModal({
       title="Alterar senha"
       description="Use a senha atual para definir uma nova. Depois, entre com ela nas próximas sessões."
       visible={visible}
-      onClose={onClose}
+      onClose={handleClose}
     >
       <View style={styles.content}>
         {success ? (
           <Alert variant="success">Senha atualizada com sucesso.</Alert>
         ) : null}
+        {apiError ? <Alert variant="error">{apiError}</Alert> : null}
 
         <PasswordField
           label="Senha atual"
@@ -76,6 +98,7 @@ export default function PasswordChangeModal({
           }}
           error={errors.currentPassword}
           placeholder="Digite a senha atual"
+          disabled={loading}
           required
         />
 
@@ -90,6 +113,7 @@ export default function PasswordChangeModal({
           error={errors.password}
           hint={`Use no mínimo ${MIN_PASSWORD_LENGTH} caracteres.`}
           placeholder="Digite a nova senha"
+          disabled={loading}
           required
         />
 
@@ -103,6 +127,7 @@ export default function PasswordChangeModal({
           }}
           error={errors.confirmPassword}
           placeholder="Confirme a nova senha"
+          disabled={loading}
           required
         />
 
@@ -113,13 +138,13 @@ export default function PasswordChangeModal({
             loading={loading}
             onPress={handleSubmit}
           >
-            Salvar senha
+            {loading ? 'Salvando…' : 'Salvar senha'}
           </Button>
           <Button
             variant="ghost"
             fullWidth
             disabled={loading}
-            onPress={onClose}
+            onPress={handleClose}
             style={{ marginTop: 8 }}
           >
             Fechar

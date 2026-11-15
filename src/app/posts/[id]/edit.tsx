@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { updatePost } from '@/api/posts.api';
 import AppLayout from '@/components/layout/AppLayout';
 import TextField from '@/components/ui/TextField';
 import TextArea from '@/components/ui/TextArea';
@@ -8,8 +9,10 @@ import Button from '@/components/ui/Button';
 import Alert from '@/components/ui/Alert';
 import EmptyState from '@/components/ui/EmptyState';
 import Icon from '@/components/ui/Icon';
-import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
+import { usePost } from '@/hooks/usePost';
+import { toPostErrorMessage } from '@/utils/post-errors';
 import {
   POST_DESCRIPTION_MAX,
   POST_DESCRIPTION_MIN,
@@ -21,15 +24,21 @@ import {
 export default function EditPostPage() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { getPost, updatePost } = useData();
+  const { user, isAdmin, isLoading: authLoading } = useAuth();
   const { colors } = useTheme();
 
-  const postId = Number(id);
-  const post = getPost(postId);
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      router.replace('/posts');
+    }
+  }, [authLoading, isAdmin, router]);
 
+  const postId = Number(id);
+  const { post, isLoading, error, notFound } = usePost(postId > 0 ? postId : null);
+
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [sourceId, setSourceId] = useState<number | null>(null);
-  const [title, setTitle] = useState(post?.title ?? '');
-  const [description, setDescription] = useState(post?.description ?? '');
   const [errors, setErrors] = useState<{ title?: string; description?: string }>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -42,7 +51,13 @@ export default function EditPostPage() {
     setApiError(null);
   }
 
-  if (!post) {
+  const isAuthor = Boolean(user && post && user.id === post.user_id);
+
+  if (authLoading || !isAdmin) {
+    return null;
+  }
+
+  if (notFound && !isLoading) {
     return (
       <AppLayout title="Editar aula">
         <EmptyState
@@ -55,6 +70,54 @@ export default function EditPostPage() {
               onPress={() => router.push('/posts' as any)}
             >
               Ver postagens
+            </Button>
+          }
+        />
+      </AppLayout>
+    );
+  }
+
+  if (error && !isLoading) {
+    return (
+      <AppLayout title="Editar aula">
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push((post ? `/posts/${post.id}` : '/posts') as any)}
+          style={styles.backBtn}
+        >
+          <Icon name="chevronLeft" size={16} color={colors.primary} />
+          <Text style={[styles.backText, { color: colors.primary }]}>
+            Voltar à aula
+          </Text>
+        </TouchableOpacity>
+        <Alert variant="error">{error}</Alert>
+      </AppLayout>
+    );
+  }
+
+  if (isLoading || !post) {
+    return (
+      <AppLayout title="Editar aula">
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </AppLayout>
+    );
+  }
+
+  if (!isAuthor) {
+    return (
+      <AppLayout title="Editar aula">
+        <EmptyState
+          kicker="Aula"
+          title="Você não pode editar esta aula"
+          description="Somente quem publicou consegue alterar o conteúdo. Você ainda pode removê-la da lista, se precisar."
+          action={
+            <Button
+              variant="primary"
+              onPress={() => router.push(`/posts/${post.id}` as any)}
+            >
+              Voltar à aula
             </Button>
           }
         />
@@ -80,9 +143,12 @@ export default function EditPostPage() {
         title: title.trim(),
         description: description.trim(),
       });
-      router.replace(`/posts/${post.id}` as any);
-    } catch {
-      setApiError('Não foi possível salvar as alterações.');
+      router.replace({
+        pathname: `/posts/${post.id}`,
+        params: { updated: '1' },
+      } as any);
+    } catch (caught) {
+      setApiError(toPostErrorMessage(caught));
     } finally {
       setIsSubmitting(false);
     }
@@ -206,5 +272,10 @@ const styles = StyleSheet.create({
   actions: {
     marginTop: 8,
     gap: 10,
+  },
+  loadingWrap: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -1,93 +1,135 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
-import { User, UserRole, LoginPayload, RegisterPayload } from '@/types/auth';
-import { INITIAL_USERS } from '@/mock/mockData';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import * as authApi from '@/api/auth.api';
+import { setUnauthorizedHandler } from '@/api/http-client';
+import type { LoginPayload, RegisterPayload, User } from '@/types/auth';
+import {
+  clearSession,
+  loadSession,
+  saveSession,
+  updateStoredUser,
+} from '@/utils/auth-storage';
 
 type AuthContextType = {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isLoading: boolean;
   login: (payload: LoginPayload) => Promise<User>;
-  register: (payload: RegisterPayload) => Promise<User>;
-  logout: () => void;
-  switchRole: () => void;
+  register: (payload: RegisterPayload) => Promise<void>;
+  logout: () => Promise<void>;
   updateUser: (fields: Partial<User>) => void;
+  updateSessionUser: (user: User) => void;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Default to Admin user for full layout exploration, with easy toggle
-  const [user, setUser] = useState<User | null>(INITIAL_USERS[0]);
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const isAuthenticated = Boolean(user);
-  const isAdmin = user?.role === 'ADMIN';
-
-  const login = async (payload: LoginPayload): Promise<User> => {
-    // Mock login
-    const found = INITIAL_USERS.find(
-      (u) => u.email.toLowerCase() === payload.email.toLowerCase()
-    );
-    const sessionUser: User = found ?? {
-      id: Date.now(),
-      name: payload.email.split('@')[0],
-      email: payload.email,
-      role: 'USER',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    setUser(sessionUser);
-    return sessionUser;
-  };
-
-  const register = async (payload: RegisterPayload): Promise<User> => {
-    const newUser: User = {
-      id: Date.now(),
-      name: payload.name,
-      email: payload.email,
-      role: 'USER',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    setUser(newUser);
-    return newUser;
-  };
-
-  const logout = () => {
+  const resetSession = useCallback(async () => {
+    await clearSession();
     setUser(null);
-  };
+    setToken(null);
+  }, []);
 
-  const switchRole = React.useCallback(() => {
-    if (!user) {
-      setUser(INITIAL_USERS[0]);
-      return;
-    }
-    const nextRole: UserRole = user.role === 'ADMIN' ? 'USER' : 'ADMIN';
-    setUser({
-      ...user,
-      role: nextRole,
-      name: nextRole === 'ADMIN' ? 'Prof. Henrique Viana' : 'Lucas Albuquerque',
-      email: nextRole === 'ADMIN' ? 'henrique.viana@escola.edu.br' : 'lucas.albuquerque@aluno.escola.edu.br',
+  useEffect(() => {
+    let mounted = true;
+    loadSession().then((session) => {
+      if (!mounted) return;
+      if (session) {
+        setUser(session.user);
+        setToken(session.token);
+      }
+      setIsLoading(false);
     });
-  }, [user]);
 
-  const updateUser = React.useCallback((fields: Partial<User>) => {
-    if (user) {
-      setUser({ ...user, ...fields, updated_at: new Date().toISOString() });
+    setUnauthorizedHandler(resetSession);
+    return () => {
+      mounted = false;
+      setUnauthorizedHandler(null);
+    };
+  }, [resetSession]);
+
+  const login = useCallback(async (payload: LoginPayload): Promise<User> => {
+    const response = await authApi.login(payload);
+    const session = {
+      user: response.data.user,
+      token: response.data.token,
+    };
+
+    await saveSession(session, payload.rememberMe);
+    setUser(session.user);
+    setToken(session.token);
+    return session.user;
+  }, []);
+
+  const register = useCallback(async (payload: RegisterPayload): Promise<void> => {
+    await authApi.register(payload);
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      //
+    } finally {
+      await resetSession();
     }
-  }, [user]);
+  }, [resetSession]);
+
+  const updateSessionUser = useCallback(async (nextUser: User) => {
+    setUser(nextUser);
+    await updateStoredUser(nextUser);
+  }, []);
+
+  const updateUser = useCallback(
+    (fields: Partial<User>) => {
+      if (user) {
+        const next = { ...user, ...fields, updated_at: new Date().toISOString() };
+        updateSessionUser(next);
+      }
+    },
+    [user, updateSessionUser]
+  );
+
+  const isAuthenticated = Boolean(user && token);
+  const isAdmin = user?.role === 'ADMIN';
 
   const value = useMemo(
     () => ({
       user,
+      token,
       isAuthenticated,
       isAdmin,
+      isLoading,
       login,
       register,
       logout,
-      switchRole,
       updateUser,
+      updateSessionUser,
     }),
-    [user, isAuthenticated, isAdmin, switchRole, updateUser]
+    [
+      user,
+      token,
+      isAuthenticated,
+      isAdmin,
+      isLoading,
+      login,
+      register,
+      logout,
+      updateUser,
+      updateSessionUser,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

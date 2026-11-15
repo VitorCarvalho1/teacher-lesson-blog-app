@@ -1,15 +1,28 @@
-export type ApiMeta = {
+export type PaginationMeta = {
   page: number;
   limit: number;
   total: number;
   totalPages: number;
 };
 
-export type ApiPaginated<T> = {
-  data: T[];
-  meta: ApiMeta;
-};
+export type ApiMeta = PaginationMeta;
 
 export type ApiSuccess<T> = {
+  status?: number;
+  message?: string;
   data: T;
+};
+
+export type ApiPaginated<T> = {
+  status?: number;
+  message?: string;
+  data: T[];
+  meta: PaginationMeta;
+};
+
+export type ApiErrorBody = {
+  status?: number;
+  code?: string;
+  message?: string;
+  timestamp?: string;
 };

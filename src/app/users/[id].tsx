@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { deleteUser, updateUser } from '@/api/users.api';
 import AppLayout from '@/components/layout/AppLayout';
 import Avatar from '@/components/ui/Avatar';
 import TextField from '@/components/ui/TextField';
@@ -10,15 +11,17 @@ import Button from '@/components/ui/Button';
 import Alert from '@/components/ui/Alert';
 import EmptyState from '@/components/ui/EmptyState';
 import Icon from '@/components/ui/Icon';
-import { UserRole } from '@/types/auth';
+import { UserRole, UpdateUserPayload } from '@/types/auth';
 import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
 import { useTheme } from '@/context/ThemeContext';
+import { useUser } from '@/hooks/useUser';
 import { formatDate } from '@/utils/format';
 import { getRoleLabel } from '@/utils/user-display';
+import { toUserErrorMessage } from '@/utils/user-errors';
 import {
   MIN_PASSWORD_LENGTH,
   normalizeEmail,
+  validateCurrentPassword,
   validateEmail,
   validateName,
   validateOptionalPassword,
@@ -27,28 +30,37 @@ import {
 
 export default function UserDetailPage() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
-  const { user: currentUser } = useAuth();
-  const { getUser, updateUserById, deleteUserById } = useData();
+  const { id, created } = useLocalSearchParams<{ id?: string; created?: string }>();
+  const { user: currentUser, updateSessionUser, isAdmin, isLoading: authLoading } = useAuth();
   const { colors, radius, spacing } = useTheme();
 
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      router.replace('/posts');
+    }
+  }, [authLoading, isAdmin, router]);
+
   const userId = Number(id);
-  const targetUser = getUser(userId);
+  const { user: targetUser, isLoading, error, notFound } = useUser(
+    userId > 0 ? userId : null
+  );
 
   const [sourceId, setSourceId] = useState<number | null>(null);
-  const [name, setName] = useState(targetUser?.name ?? '');
-  const [email, setEmail] = useState(targetUser?.email ?? '');
-  const [role, setRole] = useState<UserRole>(targetUser?.role ?? 'USER');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<UserRole>('USER');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [errors, setErrors] = useState<{
     name?: string;
     email?: string;
     password?: string;
     confirmPassword?: string;
+    currentPassword?: string;
   }>({});
   const [apiError, setApiError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<string | null>(created === '1' ? 'created' : null);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -58,11 +70,19 @@ export default function UserDetailPage() {
     setName(targetUser.name);
     setEmail(targetUser.email);
     setRole(targetUser.role);
+    setPassword('');
+    setConfirmPassword('');
+    setCurrentPassword('');
     setErrors({});
     setApiError(null);
+    setConfirmingDelete(false);
   }
 
-  if (!targetUser) {
+  if (authLoading || !isAdmin) {
+    return null;
+  }
+
+  if (notFound && !isLoading) {
     return (
       <AppLayout title="Pessoa">
         <EmptyState
@@ -82,9 +102,37 @@ export default function UserDetailPage() {
     );
   }
 
+  if (error && !isLoading) {
+    return (
+      <AppLayout title="Pessoa">
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push('/users' as any)}
+          style={styles.backBtn}
+        >
+          <Icon name="chevronLeft" size={16} color={colors.primary} />
+          <Text style={[styles.backText, { color: colors.primary }]}>
+            Voltar à comunidade
+          </Text>
+        </TouchableOpacity>
+        <Alert variant="error">{error}</Alert>
+      </AppLayout>
+    );
+  }
+
+  if (isLoading || !targetUser) {
+    return (
+      <AppLayout title="Pessoa">
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </AppLayout>
+    );
+  }
+
   const isSelf = currentUser?.id === targetUser.id;
   const joinedAt = formatDate(targetUser.created_at);
-  const isAdmin = targetUser.role === 'ADMIN';
+  const isTargetAdmin = targetUser.role === 'ADMIN';
 
   const roleOptions = [
     { label: 'Membro', value: 'USER' },
@@ -95,6 +143,8 @@ export default function UserDetailPage() {
     const errs = {
       name: validateName(name),
       email: validateEmail(email),
+      currentPassword:
+        isSelf && password ? validateCurrentPassword(currentPassword) : undefined,
       password: validateOptionalPassword(password),
       confirmPassword: password
         ? validatePasswordConfirm(password, confirmPassword)
@@ -102,37 +152,71 @@ export default function UserDetailPage() {
     };
     setErrors(errs);
     setApiError(null);
-    setSuccess(false);
+    setSuccess(null);
 
-    if (errs.name || errs.email || errs.password || errs.confirmPassword) {
+    if (
+      errs.name ||
+      errs.email ||
+      errs.currentPassword ||
+      errs.password ||
+      errs.confirmPassword
+    ) {
       return;
+    }
+
+    const payload: UpdateUserPayload = {
+      name: name.trim(),
+      email: normalizeEmail(email),
+    };
+
+    if (!isSelf) {
+      payload.role = role;
+    }
+
+    if (password) {
+      payload.password = password;
+      if (isSelf) {
+        payload.currentPassword = currentPassword;
+      }
     }
 
     setIsSaving(true);
     try {
-      await updateUserById(targetUser.id, {
-        name: name.trim(),
-        email: normalizeEmail(email),
-        role,
-        ...(password ? { password } : {}),
-      });
+      const response = await updateUser(targetUser.id, payload);
+      const updatedUser = response.data;
+
+      setSourceId(updatedUser.id);
+      setName(updatedUser.name);
+      setEmail(updatedUser.email);
+      setRole(updatedUser.role);
       setPassword('');
       setConfirmPassword('');
-      setSuccess(true);
-    } catch {
-      setApiError('Não foi possível salvar as alterações.');
+      setCurrentPassword('');
+      setSuccess('updated');
+
+      if (isSelf) {
+        updateSessionUser(updatedUser);
+      }
+    } catch (caught) {
+      setApiError(toUserErrorMessage(caught));
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDelete = async () => {
+    if (isSelf) return;
+
     setIsDeleting(true);
+    setApiError(null);
     try {
-      await deleteUserById(targetUser.id);
-      router.replace('/users');
-    } catch {
-      setApiError('Não foi possível remover o perfil.');
+      await deleteUser(targetUser.id);
+      router.replace({
+        pathname: '/users',
+        params: { deletedName: targetUser.name },
+      } as any);
+    } catch (caught) {
+      setApiError(toUserErrorMessage(caught));
       setConfirmingDelete(false);
     } finally {
       setIsDeleting(false);
@@ -164,31 +248,31 @@ export default function UserDetailPage() {
           },
         ]}
       >
-        <Avatar name={targetUser.name} role={targetUser.role} size="lg" />
+        <Avatar name={name} role={role} size="lg" />
         <View style={styles.profileMeta}>
           <Text style={[styles.profileName, { color: colors.text }]}>
-            {targetUser.name}
+            {name}
           </Text>
           <Text style={[styles.profileEmail, { color: colors.textMuted }]}>
-            {targetUser.email}
+            {email}
           </Text>
           <View style={styles.badgeRow}>
             <View
               style={[
                 styles.roleBadge,
                 {
-                  backgroundColor: isAdmin ? colors.accentSoft : colors.primarySoft,
-                  borderColor: isAdmin ? colors.accent : colors.primary,
+                  backgroundColor: isTargetAdmin ? colors.accentSoft : colors.primarySoft,
+                  borderColor: isTargetAdmin ? colors.accent : colors.primary,
                 },
               ]}
             >
               <Text
                 style={[
                   styles.roleText,
-                  { color: isAdmin ? colors.accent : colors.primary },
+                  { color: isTargetAdmin ? colors.accent : colors.primary },
                 ]}
               >
-                {getRoleLabel(targetUser.role)}
+                {getRoleLabel(role)}
               </Text>
             </View>
             {joinedAt ? (
@@ -200,10 +284,23 @@ export default function UserDetailPage() {
         </View>
       </View>
 
-      {success ? (
-        <Alert variant="success">Dados atualizados com sucesso.</Alert>
+      {success === 'created' ? (
+        <Alert variant="success" style={{ marginBottom: 12 }}>
+          Pessoa cadastrada. O perfil já aparece na comunidade.
+        </Alert>
       ) : null}
-      {apiError ? <Alert variant="error">{apiError}</Alert> : null}
+
+      {success === 'updated' ? (
+        <Alert variant="success" style={{ marginBottom: 12 }}>
+          Dados atualizados com sucesso.
+        </Alert>
+      ) : null}
+
+      {apiError ? (
+        <Alert variant="error" style={{ marginBottom: 12 }}>
+          {apiError}
+        </Alert>
+      ) : null}
 
       {/* Edit form */}
       <View
@@ -227,10 +324,10 @@ export default function UserDetailPage() {
           onChangeText={(val) => {
             setName(val);
             setErrors((prev) => ({ ...prev, name: undefined }));
-            setSuccess(false);
+            setSuccess(null);
           }}
           error={errors.name}
-          disabled={isSaving}
+          disabled={isSaving || isDeleting}
           required
         />
 
@@ -240,12 +337,12 @@ export default function UserDetailPage() {
           onChangeText={(val) => {
             setEmail(val);
             setErrors((prev) => ({ ...prev, email: undefined }));
-            setSuccess(false);
+            setSuccess(null);
           }}
           keyboardType="email-address"
           autoCapitalize="none"
           error={errors.email}
-          disabled={isSaving}
+          disabled={isSaving || isDeleting}
           required
         />
 
@@ -254,10 +351,11 @@ export default function UserDetailPage() {
           value={role}
           onValueChange={(val) => {
             setRole(val as UserRole);
-            setSuccess(false);
+            setSuccess(null);
           }}
           options={roleOptions}
-          disabled={isSaving}
+          disabled={isSelf || isSaving || isDeleting}
+          hint={isSelf ? 'Você não pode alterar o próprio perfil por aqui.' : undefined}
         />
 
         <Text
@@ -275,13 +373,29 @@ export default function UserDetailPage() {
           onChangeText={(val) => {
             setPassword(val);
             setErrors((prev) => ({ ...prev, password: undefined }));
-            setSuccess(false);
+            setSuccess(null);
           }}
           placeholder="Deixe em branco para não alterar"
           hint={`Use no mínimo ${MIN_PASSWORD_LENGTH} caracteres se for alterar.`}
           error={errors.password}
-          disabled={isSaving}
+          disabled={isSaving || isDeleting}
         />
+
+        {isSelf && password ? (
+          <PasswordField
+            label="Senha atual"
+            value={currentPassword}
+            onChangeText={(val) => {
+              setCurrentPassword(val);
+              setErrors((prev) => ({ ...prev, currentPassword: undefined }));
+              setSuccess(null);
+            }}
+            placeholder="Digite a senha atual"
+            error={errors.currentPassword}
+            disabled={isSaving || isDeleting}
+            required
+          />
+        ) : null}
 
         {password ? (
           <PasswordField
@@ -290,11 +404,12 @@ export default function UserDetailPage() {
             onChangeText={(val) => {
               setConfirmPassword(val);
               setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
-              setSuccess(false);
+              setSuccess(null);
             }}
             placeholder="Confirme a nova senha"
             error={errors.confirmPassword}
-            disabled={isSaving}
+            disabled={isSaving || isDeleting}
+            required
           />
         ) : null}
 
@@ -340,7 +455,7 @@ export default function UserDetailPage() {
             {confirmingDelete ? (
               <View style={styles.confirmBox}>
                 <Text style={[styles.confirmPrompt, { color: colors.text }]}>
-                  Remover <Text style={{ fontWeight: '700' }}>{targetUser.name}</Text>?
+                  Remover <Text style={{ fontWeight: '700' }}>{name}</Text>?
                   Esta ação não restaura o acesso automaticamente.
                 </Text>
                 <View style={styles.confirmActions}>
@@ -463,5 +578,10 @@ const styles = StyleSheet.create({
   confirmActions: {
     flexDirection: 'row',
     gap: 10,
+  },
+  loadingWrap: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

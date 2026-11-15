@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { createPost } from '@/api/posts.api';
 import AppLayout from '@/components/layout/AppLayout';
 import TextField from '@/components/ui/TextField';
 import TextArea from '@/components/ui/TextArea';
 import Button from '@/components/ui/Button';
 import Alert from '@/components/ui/Alert';
 import Icon from '@/components/ui/Icon';
-import { useData } from '@/context/DataContext';
 import { useTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
+import { toPostErrorMessage } from '@/utils/post-errors';
 import {
   POST_DESCRIPTION_MAX,
   POST_DESCRIPTION_MIN,
@@ -19,8 +21,14 @@ import {
 
 export default function NewPostPage() {
   const router = useRouter();
-  const { createPost } = useData();
   const { colors } = useTheme();
+  const { isAdmin, isLoading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      router.replace('/posts');
+    }
+  }, [authLoading, isAdmin, router]);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -42,13 +50,16 @@ export default function NewPostPage() {
 
     setIsSubmitting(true);
     try {
-      const created = await createPost({
+      const response = await createPost({
         title: title.trim(),
         description: description.trim(),
       });
-      router.replace(`/posts/${created.id}` as any);
-    } catch {
-      setApiError('Não foi possível publicar a aula. Tente novamente.');
+      router.replace({
+        pathname: `/posts/${response.data.id}`,
+        params: { created: '1' },
+      } as any);
+    } catch (error) {
+      setApiError(toPostErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -56,6 +67,10 @@ export default function NewPostPage() {
 
   const titleLength = title.trim().length;
   const descLength = description.trim().length;
+
+  if (authLoading || !isAdmin) {
+    return null;
+  }
 
   return (
     <AppLayout title="Nova aula">

@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import CommentForm from '@/components/comments/CommentForm';
 import CommentItem from '@/components/comments/CommentItem';
 import Pagination from '@/components/ui/Pagination';
+import Alert from '@/components/ui/Alert';
 import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
 import { useTheme } from '@/context/ThemeContext';
+import { useComments } from '@/hooks/useComments';
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 10;
 
 type CommentThreadProps = {
   postId: number;
@@ -16,30 +17,31 @@ type CommentThreadProps = {
 export default function CommentThread({ postId }: CommentThreadProps) {
   const { user } = useAuth();
   const { colors } = useTheme();
-  const { getCommentsForPost, createComment, updateComment, deleteComment } =
-    useData();
   const [page, setPage] = useState(1);
+  const { comments, meta, isLoading, error, reload } = useComments(
+    postId,
+    page,
+    PAGE_SIZE
+  );
 
-  const comments = getCommentsForPost(postId);
-  const total = comments.length;
-  const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
-  const pagedComments = comments.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  const handleCreated = async (content: string) => {
-    await createComment(postId, { content });
-    setPage(1);
-  };
-
-  const handleUpdate = async (id: number, content: string) => {
-    await updateComment(postId, id, { content });
-  };
-
-  const handleDelete = async (id: number) => {
-    await deleteComment(postId, id);
-    if (pagedComments.length === 1 && page > 1) {
-      setPage((prev) => prev - 1);
+  const handleCreated = () => {
+    if (page !== 1) {
+      setPage(1);
+      return;
     }
+    reload();
   };
+
+  const handleChanged = () => {
+    if (comments.length === 1 && page > 1) {
+      setPage((prev) => prev - 1);
+      return;
+    }
+    reload();
+  };
+
+  const total = meta?.total ?? 0;
+  const totalPages = meta?.totalPages ?? 1;
 
   return (
     <View style={styles.container}>
@@ -56,19 +58,28 @@ export default function CommentThread({ postId }: CommentThreadProps) {
 
       <CommentForm postId={postId} onCreated={handleCreated} />
 
-      {total === 0 ? (
+      {error ? (
+        <Alert variant="error" style={{ marginVertical: 8 }}>
+          {error}
+        </Alert>
+      ) : null}
+
+      {isLoading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      ) : total === 0 ? (
         <Text style={[styles.empty, { color: colors.textMuted }]}>
           Ainda não há comentários nesta aula. Seja a primeira pessoa a escrever.
         </Text>
       ) : (
         <View style={styles.list}>
-          {pagedComments.map((comment) => (
+          {comments.map((comment) => (
             <CommentItem
               key={comment.id}
               comment={comment}
               currentUser={user}
-              onUpdate={handleUpdate}
-              onDelete={handleDelete}
+              onChanged={handleChanged}
             />
           ))}
 
@@ -112,6 +123,10 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     marginVertical: 16,
     textAlign: 'center',
+  },
+  loadingWrap: {
+    paddingVertical: 20,
+    alignItems: 'center',
   },
   list: {
     marginTop: 12,

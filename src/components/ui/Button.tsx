@@ -13,6 +13,7 @@ import { useTheme } from '@/context/ThemeContext';
 type ButtonProps = {
   children: React.ReactNode;
   variant?: 'primary' | 'ghost' | 'danger';
+  size?: 'sm' | 'md';
   fullWidth?: boolean;
   loading?: boolean;
   disabled?: boolean;
@@ -24,6 +25,7 @@ type ButtonProps = {
 export default function Button({
   children,
   variant = 'primary',
+  size = 'md',
   fullWidth = false,
   loading = false,
   disabled = false,
@@ -32,6 +34,7 @@ export default function Button({
   textStyle,
 }: ButtonProps) {
   const { colors, radius, spacing } = useTheme();
+  const isSm = size === 'sm';
 
   const getContainerStyles = (): ViewStyle => {
     switch (variant) {
@@ -83,8 +86,10 @@ export default function Button({
       style={[
         styles.base,
         {
-          borderRadius: radius.md,
-          paddingHorizontal: spacing.base,
+          borderRadius: isSm ? radius.sm : radius.md,
+          paddingHorizontal: isSm ? spacing.sm : spacing.base,
+          paddingVertical: isSm ? 0 : 10,
+          height: isSm ? 32 : 44,
           opacity: disabled ? 0.6 : 1,
           alignSelf: fullWidth ? 'stretch' : 'flex-start',
         },
@@ -96,10 +101,17 @@ export default function Button({
         <ActivityIndicator
           size="small"
           color={variant === 'ghost' ? colors.text : '#ffffff'}
-          style={styles.spinner}
+          style={isSm ? styles.spinnerSm : styles.spinner}
         />
       ) : null}
-      <Text style={[styles.text, getTextStyles(), textStyle]}>
+      <Text
+        style={[
+          styles.text,
+          isSm && styles.textSm,
+          getTextStyles(),
+          textStyle,
+        ]}
+      >
         {children}
       </Text>
     </TouchableOpacity>
@@ -117,9 +129,16 @@ const styles = StyleSheet.create({
   spinner: {
     marginRight: 8,
   },
+  spinnerSm: {
+    marginRight: 6,
+  },
   text: {
     fontSize: 15,
     fontWeight: '600',
     letterSpacing: -0.2,
+  },
+  textSm: {
+    fontSize: 13,
+    letterSpacing: -0.1,
   },
 });

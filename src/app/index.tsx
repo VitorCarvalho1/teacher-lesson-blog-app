@@ -1,11 +1,11 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { listPosts } from '@/api/posts.api';
+import { listUsers } from '@/api/users.api';
 import AppLayout from '@/components/layout/AppLayout';
 import Icon, { IconName } from '@/components/ui/Icon';
-import Button from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
 import { useTheme } from '@/context/ThemeContext';
 import { getFirstName } from '@/utils/user-display';
 
@@ -45,9 +45,44 @@ const SHORTCUTS: Shortcut[] = [
 
 export default function HomePage() {
   const router = useRouter();
-  const { user, isAdmin, switchRole } = useAuth();
-  const { posts, users } = useData();
+  const { user, isAdmin, isAuthenticated, isLoading } = useAuth();
   const { colors, radius, spacing } = useTheme();
+
+  const [postsCount, setPostsCount] = useState<number | null>(null);
+  const [usersCount, setUsersCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace('/login');
+      return;
+    }
+    if (!isLoading && isAuthenticated && !isAdmin) {
+      router.replace('/posts');
+      return;
+    }
+  }, [isLoading, isAuthenticated, isAdmin, router]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      listPosts({ limit: 1 })
+        .then((res) => setPostsCount(res.meta.total))
+        .catch(() => {});
+
+      listUsers({ limit: 1 })
+        .then((res) => setUsersCount(res.meta.total))
+        .catch(() => {});
+    }
+  }, [isAdmin]);
+
+  if (isLoading || !user || !isAdmin) {
+    return (
+      <AppLayout title="Início">
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </AppLayout>
+    );
+  }
 
   const firstName = getFirstName(user);
 
@@ -68,30 +103,6 @@ export default function HomePage() {
           . Daqui você publica aulas e acompanha a comunidade do portal.
         </Text>
 
-        {!isAdmin ? (
-          <View
-            style={[
-              styles.noticeCard,
-              {
-                backgroundColor: colors.primarySoft,
-                borderColor: colors.primary,
-                borderRadius: radius.md,
-              },
-            ]}
-          >
-            <Text style={[styles.noticeText, { color: colors.primary }]}>
-              Você está visualizando como Membro.
-            </Text>
-            <Button
-              variant="primary"
-              onPress={switchRole}
-              style={{ marginTop: 8 }}
-            >
-              Alternar para Administrador
-            </Button>
-          </View>
-        ) : null}
-
         {/* Stats summary banner */}
         <View style={styles.statsRow}>
           <View
@@ -105,7 +116,7 @@ export default function HomePage() {
             ]}
           >
             <Text style={[styles.statValue, { color: colors.primary }]}>
-              {posts.length}
+              {postsCount !== null ? postsCount : '…'}
             </Text>
             <Text style={[styles.statLabel, { color: colors.textMuted }]}>
               Aulas publicadas
@@ -123,7 +134,7 @@ export default function HomePage() {
             ]}
           >
             <Text style={[styles.statValue, { color: colors.accent }]}>
-              {users.length}
+              {usersCount !== null ? usersCount : '…'}
             </Text>
             <Text style={[styles.statLabel, { color: colors.textMuted }]}>
               Membros cadastrados
@@ -210,15 +221,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 20,
   },
-  noticeCard: {
-    borderWidth: 1,
-    padding: 14,
-    marginBottom: 16,
-  },
-  noticeText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
   statsRow: {
     flexDirection: 'row',
     gap: 12,
@@ -279,5 +281,10 @@ const styles = StyleSheet.create({
   shortcutDesc: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  loadingWrap: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

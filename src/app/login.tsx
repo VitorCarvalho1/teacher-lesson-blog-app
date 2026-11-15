@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import AuthLayout from '@/components/auth/AuthLayout';
 import TextField from '@/components/ui/TextField';
 import PasswordField from '@/components/ui/PasswordField';
@@ -9,16 +9,18 @@ import Button from '@/components/ui/Button';
 import Alert from '@/components/ui/Alert';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import { validateEmail, validatePassword } from '@/utils/validation';
+import { toAuthErrorMessage } from '@/utils/auth-errors';
+import { normalizeEmail, validateEmail, validatePassword } from '@/utils/validation';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { registered } = useLocalSearchParams<{ registered?: string }>();
   const { login } = useAuth();
   const { colors } = useTheme();
 
-  const [email, setEmail] = useState('henrique.viana@escola.edu.br');
-  const [password, setPassword] = useState('123456');
-  const [rememberMe, setRememberMe] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,10 +39,14 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      await login({ email, password, rememberMe });
-      router.replace('/posts');
-    } catch {
-      setApiError('Não foi possível entrar. Verifique os dados informados.');
+      const sessionUser = await login({
+        email: normalizeEmail(email),
+        password,
+        rememberMe,
+      });
+      router.replace(sessionUser.role === 'ADMIN' ? '/' : '/posts');
+    } catch (error) {
+      setApiError(toAuthErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -51,6 +57,12 @@ export default function LoginPage() {
       title="Entrar"
       subtitle="Use o e-mail da comunidade acadêmica para acessar as publicações."
     >
+      {registered === '1' ? (
+        <Alert variant="success">
+          Conta criada. Entre com o e-mail e a senha que você acabou de cadastrar.
+        </Alert>
+      ) : null}
+
       {apiError ? <Alert variant="error">{apiError}</Alert> : null}
 
       <TextField

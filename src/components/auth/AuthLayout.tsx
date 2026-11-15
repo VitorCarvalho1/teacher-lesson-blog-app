@@ -1,10 +1,9 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '@/context/ThemeContext';
 import BrandLogo from '@/components/ui/BrandLogo';
 import ThemeToggle from '@/components/ui/ThemeToggle';
-import Icon from '@/components/ui/Icon';
+import { useTheme } from '@/context/ThemeContext';
+import React from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type AuthLayoutProps = {
   title: string;
@@ -42,27 +41,6 @@ export default function AuthLayout({
             Um espaço acadêmico para docentes e estudantes publicarem, lerem e
             acompanharem lições com clareza.
           </Text>
-
-          <View style={styles.highlights}>
-            <View style={styles.highlightItem}>
-              <Icon name="checkCircle" size={16} color={colors.primary} />
-              <Text style={[styles.highlightText, { color: colors.text }]}>
-                Publicações pensadas para sala de aula
-              </Text>
-            </View>
-            <View style={styles.highlightItem}>
-              <Icon name="checkCircle" size={16} color={colors.primary} />
-              <Text style={[styles.highlightText, { color: colors.text }]}>
-                Acesso autenticado para a comunidade
-              </Text>
-            </View>
-            <View style={styles.highlightItem}>
-              <Icon name="checkCircle" size={16} color={colors.primary} />
-              <Text style={[styles.highlightText, { color: colors.text }]}>
-                Leitura confortável no claro e no escuro
-              </Text>
-            </View>
-          </View>
         </View>
 
         <View

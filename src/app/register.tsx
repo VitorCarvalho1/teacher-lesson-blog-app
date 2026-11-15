@@ -8,8 +8,10 @@ import Button from '@/components/ui/Button';
 import Alert from '@/components/ui/Alert';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
+import { toAuthErrorMessage } from '@/utils/auth-errors';
 import {
   MIN_PASSWORD_LENGTH,
+  normalizeEmail,
   validateEmail,
   validateName,
   validatePassword,
@@ -50,10 +52,14 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      await register({ name, email, password });
-      router.replace('/posts');
-    } catch {
-      setApiError('Não foi possível realizar o cadastro. Tente novamente.');
+      await register({
+        name: name.trim(),
+        email: normalizeEmail(email),
+        password,
+      });
+      router.replace({ pathname: '/login', params: { registered: '1' } });
+    } catch (error) {
+      setApiError(toAuthErrorMessage(error));
     } finally {
       setLoading(false);
     }

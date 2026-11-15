@@ -65,7 +65,7 @@ export default function MobileDrawer({ visible, onClose }: MobileDrawerProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { colors, radius } = useTheme();
-  const { user, isAdmin, logout, switchRole } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
 
   const filteredItems = NAV_ITEMS.filter((item) => {
@@ -80,9 +80,9 @@ export default function MobileDrawer({ visible, onClose }: MobileDrawerProps) {
     router.push(to as any);
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
     onClose();
+    await logout();
     router.replace('/login');
   };
 
@@ -126,44 +126,6 @@ export default function MobileDrawer({ visible, onClose }: MobileDrawerProps) {
                 </TouchableOpacity>
               </View>
             </View>
-
-            {/* Quick Role Switcher for previewing both Admin and Member views */}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={switchRole}
-              style={[
-                styles.roleSwitchCard,
-                {
-                  backgroundColor: isAdmin ? colors.accentSoft : colors.primarySoft,
-                  borderColor: isAdmin ? colors.accent : colors.primary,
-                  borderRadius: radius.md,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    styles.roleSwitchTitle,
-                    { color: isAdmin ? colors.accent : colors.primary },
-                  ]}
-                >
-                  Perfil: {user ? getRoleLabel(user.role) : 'Visitante'}
-                </Text>
-                <Text
-                  style={[
-                    styles.roleSwitchHint,
-                    { color: colors.textMuted },
-                  ]}
-                >
-                  Toque para alternar para {isAdmin ? 'Membro' : 'Administrador'}
-                </Text>
-              </View>
-              <Icon
-                name="users"
-                size={16}
-                color={isAdmin ? colors.accent : colors.primary}
-              />
-            </TouchableOpacity>
 
             <ScrollView style={styles.navSection}>
               <Text
@@ -339,23 +301,6 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     padding: 6,
-  },
-  roleSwitchCard: {
-    margin: 14,
-    marginBottom: 6,
-    padding: 12,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  roleSwitchTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  roleSwitchHint: {
-    fontSize: 11,
-    marginTop: 2,
   },
   navSection: {
     flex: 1,

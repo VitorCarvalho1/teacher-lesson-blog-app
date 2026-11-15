@@ -2,6 +2,7 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
+  timeZone: 'America/Sao_Paulo',
 });
 
 export function formatDate(value: string): string {
@@ -19,6 +20,7 @@ const longDateFormatter = new Intl.DateTimeFormat('pt-BR', {
   day: 'numeric',
   month: 'long',
   year: 'numeric',
+  timeZone: 'America/Sao_Paulo',
 });
 
 export function formatLongDate(value: string): string {
@@ -37,6 +39,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
   month: 'short',
   hour: '2-digit',
   minute: '2-digit',
+  timeZone: 'America/Sao_Paulo',
 });
 
 export function formatDateTime(value: string): string {

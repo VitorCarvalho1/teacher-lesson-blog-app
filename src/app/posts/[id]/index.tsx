@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { deletePost } from '@/api/posts.api';
 import AppLayout from '@/components/layout/AppLayout';
 import CommentThread from '@/components/comments/CommentThread';
 import Button from '@/components/ui/Button';
@@ -8,9 +9,10 @@ import Alert from '@/components/ui/Alert';
 import EmptyState from '@/components/ui/EmptyState';
 import Icon from '@/components/ui/Icon';
 import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
 import { useTheme } from '@/context/ThemeContext';
+import { usePost } from '@/hooks/usePost';
 import { formatLongDate } from '@/utils/format';
+import { toPostErrorMessage } from '@/utils/post-errors';
 import { PostStatus } from '@/types/post';
 
 const STATUS_LABEL: Record<PostStatus, string> = {
@@ -22,9 +24,12 @@ const STATUS_LABEL: Record<PostStatus, string> = {
 
 export default function PostDetailPage() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
-  const { user, isAdmin } = useAuth();
-  const { getPost, deletePost } = useData();
+  const { id, created, updated } = useLocalSearchParams<{
+    id?: string;
+    created?: string;
+    updated?: string;
+  }>();
+  const { user } = useAuth();
   const { colors, radius, spacing } = useTheme();
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -32,9 +37,31 @@ export default function PostDetailPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const postId = Number(id);
-  const post = getPost(postId);
+  const { post, isLoading, error, notFound } = usePost(postId > 0 ? postId : null);
 
-  if (!post) {
+  const canManage = user?.role === 'ADMIN';
+  const canEdit = Boolean(canManage && user && post && user.id === post.user_id);
+
+  const handleDelete = async () => {
+    if (!post || !canManage) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deletePost(post.id);
+      router.replace({
+        pathname: '/posts',
+        params: { deletedTitle: post.title },
+      } as any);
+    } catch (caught) {
+      setDeleteError(toPostErrorMessage(caught));
+      setConfirmingDelete(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  if (notFound && !isLoading) {
     return (
       <AppLayout title="Aula">
         <EmptyState
@@ -54,23 +81,36 @@ export default function PostDetailPage() {
     );
   }
 
+  if (error && !isLoading) {
+    return (
+      <AppLayout title="Aula">
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push('/posts' as any)}
+          style={styles.backBtn}
+        >
+          <Icon name="chevronLeft" size={16} color={colors.primary} />
+          <Text style={[styles.backText, { color: colors.primary }]}>
+            Voltar às postagens
+          </Text>
+        </TouchableOpacity>
+        <Alert variant="error">{error}</Alert>
+      </AppLayout>
+    );
+  }
+
+  if (isLoading || !post) {
+    return (
+      <AppLayout title="Aula">
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </AppLayout>
+    );
+  }
+
   const author = post.author?.name ?? 'Autor não informado';
   const publishedAt = formatLongDate(post.created_at);
-  const canEdit = Boolean(isAdmin && user && (user.id === post.user_id || isAdmin));
-
-  const handleDelete = async () => {
-    setIsDeleting(true);
-    setDeleteError(null);
-    try {
-      await deletePost(post.id);
-      router.replace('/posts');
-    } catch {
-      setDeleteError('Não foi possível remover a aula.');
-      setConfirmingDelete(false);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   return (
     <AppLayout title="Aula">
@@ -85,7 +125,23 @@ export default function PostDetailPage() {
         </Text>
       </TouchableOpacity>
 
-      {deleteError ? <Alert variant="error">{deleteError}</Alert> : null}
+      {created === '1' ? (
+        <Alert variant="success" style={{ marginBottom: 12 }}>
+          Aula publicada. Ela já aparece na lista da comunidade.
+        </Alert>
+      ) : null}
+
+      {updated === '1' ? (
+        <Alert variant="success" style={{ marginBottom: 12 }}>
+          Aula atualizada.
+        </Alert>
+      ) : null}
+
+      {deleteError ? (
+        <Alert variant="error" style={{ marginBottom: 12 }}>
+          {deleteError}
+        </Alert>
+      ) : null}
 
       <View style={styles.header}>
         <Text style={[styles.kicker, { color: colors.accent }]}>Aula</Text>
@@ -142,7 +198,7 @@ export default function PostDetailPage() {
       </View>
 
       {/* Admin management section */}
-      {isAdmin ? (
+      {canManage ? (
         <View
           style={[
             styles.manageSection,
@@ -312,5 +368,10 @@ const styles = StyleSheet.create({
   confirmActions: {
     flexDirection: 'row',
     gap: 10,
+  },
+  loadingWrap: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

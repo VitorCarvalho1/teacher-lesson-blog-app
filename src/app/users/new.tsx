@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { createUser } from '@/api/users.api';
 import AppLayout from '@/components/layout/AppLayout';
 import TextField from '@/components/ui/TextField';
 import PasswordField from '@/components/ui/PasswordField';
@@ -9,8 +10,9 @@ import Button from '@/components/ui/Button';
 import Alert from '@/components/ui/Alert';
 import Icon from '@/components/ui/Icon';
 import { UserRole } from '@/types/auth';
-import { useData } from '@/context/DataContext';
+import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
+import { toUserErrorMessage } from '@/utils/user-errors';
 import {
   MIN_PASSWORD_LENGTH,
   normalizeEmail,
@@ -22,8 +24,14 @@ import {
 
 export default function NewUserPage() {
   const router = useRouter();
-  const { createUser } = useData();
   const { colors } = useTheme();
+  const { isAdmin, isLoading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      router.replace('/posts');
+    }
+  }, [authLoading, isAdmin, router]);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -55,15 +63,18 @@ export default function NewUserPage() {
 
     setIsSubmitting(true);
     try {
-      const created = await createUser({
+      const response = await createUser({
         name: name.trim(),
         email: normalizeEmail(email),
         password,
         role,
       });
-      router.replace(`/users/${created.id}` as any);
-    } catch {
-      setApiError('Não foi possível cadastrar a pessoa. Tente novamente.');
+      router.replace({
+        pathname: `/users/${response.data.id}`,
+        params: { created: '1' },
+      } as any);
+    } catch (error) {
+      setApiError(toUserErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -81,6 +92,10 @@ export default function NewUserPage() {
       hint: 'Administradores publicam aulas e gerenciam a comunidade.',
     },
   ];
+
+  if (authLoading || !isAdmin) {
+    return null;
+  }
 
   return (
     <AppLayout title="Nova pessoa">
